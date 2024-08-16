@@ -8,9 +8,9 @@ extern crate ip_network_table_deps_treebitmap;
 
 mod rand_test;
 
+use ip_network_table_deps_treebitmap::IpLookupTable;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
-use ip_network_table_deps_treebitmap::IpLookupTable;
 
 #[test]
 #[should_panic]
