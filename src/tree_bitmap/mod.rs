@@ -14,17 +14,15 @@ mod node;
 
 use self::allocator::{Allocator, AllocatorHandle};
 use self::node::{MatchResult, Node};
-use std::ptr;
 
 // #[derive(Debug)]
-pub struct TreeBitmap<T: Sized> {
+pub struct TreeBitmap<T: Sized + Clone + Copy + Default> {
     trienodes: Allocator<Node>,
     results: Allocator<T>,
     len: usize,
-    should_drop: bool, // drop contents on drop?
 }
 
-impl<T: Sized> TreeBitmap<T> {
+impl<T: Sized + Clone + Copy + Default> TreeBitmap<T> {
     /// Returns ````TreeBitmap ```` with 0 start capacity.
     pub fn new() -> Self {
         Self::with_capacity(0)
@@ -40,7 +38,6 @@ impl<T: Sized> TreeBitmap<T> {
             trienodes: trieallocator,
             results: Allocator::with_capacity(n),
             len: 0,
-            should_drop: true,
         }
     }
 
@@ -477,13 +474,13 @@ struct PathElem {
     pos: usize,
 }
 
-pub struct Iter<'a, T: 'a> {
+pub struct Iter<'a, T: 'a + Clone + Copy + Default> {
     inner: &'a TreeBitmap<T>,
     path: Vec<PathElem>,
     nibbles: Vec<u8>,
 }
 
-pub struct IterMut<'a, T: 'a> {
+pub struct IterMut<'a, T: 'a + Clone + Copy + Default> {
     inner: &'a mut TreeBitmap<T>,
     path: Vec<PathElem>,
     nibbles: Vec<u8>,
@@ -499,7 +496,7 @@ static PREFIX_OF_BIT: [u8; 32] = [// 0       1       2      3        4       5  
                                   // 24      25      26      27      28      29      30      31
                                   0b1000, 0b1001, 0b1010, 0b1011, 0b1100, 0b1101, 0b1110, 0b1111];
 
-fn next<T: Sized>(
+fn next<T: Sized + Clone + Copy + Default>(
     trie: &TreeBitmap<T>,
     path: &mut Vec<PathElem>,
     nibbles: &mut Vec<u8>,
@@ -545,7 +542,7 @@ fn next<T: Sized>(
     }
 }
 
-impl<'a, T: 'a> Iterator for Iter<'a, T> {
+impl<'a, T: 'a + Clone + Copy + Default> Iterator for Iter<'a, T> {
     type Item = (Vec<u8>, u32, &'a T); //(nibbles, masklen, &T)
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -559,7 +556,7 @@ impl<'a, T: 'a> Iterator for Iter<'a, T> {
     }
 }
 
-impl<'a, T: 'a> Iterator for IterMut<'a, T> {
+impl<'a, T: 'a + Clone + Copy + Default> Iterator for IterMut<'a, T> {
     type Item = (Vec<u8>, u32, &'a mut T); //(nibbles, masklen, &T)
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -574,20 +571,19 @@ impl<'a, T: 'a> Iterator for IterMut<'a, T> {
     }
 }
 
-pub struct IntoIter<T> {
+pub struct IntoIter<T: Clone + Copy + Default> {
     inner: TreeBitmap<T>,
     path: Vec<PathElem>,
     nibbles: Vec<u8>,
 }
 
-impl<'a, T: 'a> Iterator for IntoIter<T> {
+impl<'a, T: 'a + Clone + Copy + Default> Iterator for IntoIter<T> {
     type Item = (Vec<u8>, u32, T); //(nibbles, masklen, T)
 
     fn next(&mut self) -> Option<Self::Item> {
         match next(&self.inner, &mut self.path, &mut self.nibbles) {
             Some((path, bits_matched, hdl, index)) => {
-                let value = self.inner.results.get(&hdl, index);
-                let value = unsafe { ptr::read(value) };
+                let value = *self.inner.results.get(&hdl, index);
                 Some((path, bits_matched, value))
             }
             None => None,
@@ -595,14 +591,13 @@ impl<'a, T: 'a> Iterator for IntoIter<T> {
     }
 }
 
-impl<T> IntoIterator for TreeBitmap<T> {
+impl<T: Clone + Copy + Default> IntoIterator for TreeBitmap<T> {
     type Item = (Vec<u8>, u32, T); //(nibbles, masklen, T)
     type IntoIter = IntoIter<T>;
 
-    fn into_iter(mut self) -> IntoIter<T> {
+    fn into_iter(self) -> IntoIter<T> {
         let root_hdl = self.root_handle();
         let root_node = *self.trienodes.get(&root_hdl, 0);
-        self.should_drop = false; // IntoIter will drop contents
         IntoIter {
             inner: self,
             path: vec![PathElem {
@@ -614,18 +609,12 @@ impl<T> IntoIterator for TreeBitmap<T> {
     }
 }
 
-impl<T> Drop for IntoIter<T> {
-    fn drop(&mut self) {
-        for _ in self {}
-    }
-}
-
-pub struct MatchesMut<'a, T: 'a> {
+pub struct MatchesMut<'a, T: 'a + Clone + Copy + Default> {
     inner: &'a mut TreeBitmap<T>,
     path: std::vec::IntoIter<(u32, AllocatorHandle, u32)>,
 }
 
-impl<'a, T: 'a> Iterator for MatchesMut<'a, T> {
+impl<'a, T: 'a + Clone + Copy + Default> Iterator for MatchesMut<'a, T> {
     type Item = (u32, &'a mut T);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -636,18 +625,6 @@ impl<'a, T: 'a> Iterator for MatchesMut<'a, T> {
                 Some((bits_matched, val_ref))
             },
             None => None,
-        }
-    }
-}
-
-impl<T> Drop for TreeBitmap<T> {
-    fn drop(&mut self) {
-        if self.should_drop {
-            for (_, _, item) in self.iter() {
-                unsafe {
-                    ptr::read(item);
-                }
-            }
         }
     }
 }
@@ -748,43 +725,8 @@ mod tests {
         assert_eq!(iter.next(), None);
     }
 
+    #[derive(Clone, Copy, Default, Debug)]
     struct Thing {
         id: usize,
-    }
-    impl Drop for Thing {
-        fn drop(&mut self) {
-            println!("dropping id {}", self.id);
-        }
-    }
-
-    #[test]
-    fn drop() {
-        let mut tbm: TreeBitmap<Thing> = TreeBitmap::new();
-        let (nibbles_a, mask_a) = (&[0], 0);
-        let (nibbles_b, mask_b) = (&[0, 10], 8);
-        let (nibbles_c, mask_c) = (&[0, 10, 0, 10, 0, 10], 24);
-        let (nibbles_d, mask_d) = (&[0, 10, 0, 10, 1, 11], 24);
-        tbm.insert(nibbles_a, mask_a, Thing { id: 1 });
-        tbm.insert(nibbles_b, mask_b, Thing { id: 2 });
-        tbm.insert(nibbles_c, mask_c, Thing { id: 3 });
-        tbm.insert(nibbles_d, mask_d, Thing { id: 4 });
-        println!("should drop");
-    }
-
-    #[test]
-    fn into_iter_drop() {
-        let mut tbm: TreeBitmap<Thing> = TreeBitmap::new();
-        let (nibbles_a, mask_a) = (&[0], 0);
-        let (nibbles_b, mask_b) = (&[0, 10], 8);
-        let (nibbles_c, mask_c) = (&[0, 10, 0, 10, 0, 10], 24);
-        let (nibbles_d, mask_d) = (&[0, 10, 0, 10, 1, 11], 24);
-        tbm.insert(nibbles_a, mask_a, Thing { id: 1 });
-        tbm.insert(nibbles_b, mask_b, Thing { id: 2 });
-        tbm.insert(nibbles_c, mask_c, Thing { id: 3 });
-        tbm.insert(nibbles_d, mask_d, Thing { id: 4 });
-        let mut iter = tbm.into_iter();
-        iter.next();
-        iter.next();
-        println!("should drop 3 - 4");
     }
 }

@@ -22,7 +22,6 @@
 extern crate alloc;
 #[cfg(feature = "alloc")]
 use core as std;
-
 use std::marker::PhantomData;
 
 mod tree_bitmap;
@@ -35,7 +34,7 @@ use address::Address;
 pub use address::addr::*;
 
 /// A fast, compressed IP lookup table.
-pub struct IpLookupTable<A, T> {
+pub struct IpLookupTable<A, T: Clone + Copy + Default> {
     inner: TreeBitmap<T>,
     _addrtype: PhantomData<A>,
 }
@@ -43,6 +42,7 @@ pub struct IpLookupTable<A, T> {
 impl<A, T> IpLookupTable<A, T>
 where
     A: Address,
+    T: Clone + Copy + Default,
 {
     /// Initialize an empty lookup table with no preallocation.
     pub fn new() -> Self {
@@ -339,15 +339,17 @@ where
 impl<A, T> Default for IpLookupTable<A, T>
 where
     A: Address,
+    T: Clone + Copy + Default,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a, A, T: 'a> Iterator for Iter<'a, A, T>
+impl<'a, A, T> Iterator for Iter<'a, A, T>
 where
     A: Address,
+    T: 'a + Clone + Copy + Default,
 {
     type Item = (A, u32, &'a T);
 
@@ -361,9 +363,10 @@ where
     }
 }
 
-impl<'a, A, T: 'a> Iterator for IterMut<'a, A, T>
+impl<'a, A, T> Iterator for IterMut<'a, A, T>
 where
     A: Address,
+    T: 'a + Clone + Copy + Default,
 {
     type Item = (A, u32, &'a mut T);
 
@@ -377,9 +380,10 @@ where
     }
 }
 
-impl<'a, A, T: 'a> Iterator for IntoIter<A, T>
+impl<'a, A, T> Iterator for IntoIter<A, T>
 where
     A: Address,
+    T: 'a + Clone + Copy + Default,
 {
     type Item = (A, u32, T);
 
@@ -396,6 +400,7 @@ where
 impl<A, T> IntoIterator for IpLookupTable<A, T>
 where
     A: Address,
+    T: Clone + Copy + Default,
 {
     type Item = (A, u32, T);
     type IntoIter = IntoIter<A, T>;
@@ -411,7 +416,7 @@ where
 /// Iterator over prefixes and associated values. The prefixes are returned in
 /// "tree"-order.
 #[doc(hidden)]
-pub struct Iter<'a, A, T: 'a> {
+pub struct Iter<'a, A, T: 'a + Clone + Copy + Default> {
     inner: tree_bitmap::Iter<'a, T>,
     _addrtype: PhantomData<A>,
 }
@@ -419,7 +424,7 @@ pub struct Iter<'a, A, T: 'a> {
 /// Mutable iterator over prefixes and associated values. The prefixes are
 /// returned in "tree"-order.
 #[doc(hidden)]
-pub struct IterMut<'a, A, T: 'a> {
+pub struct IterMut<'a, A, T: 'a + Clone + Copy + Default> {
     inner: tree_bitmap::IterMut<'a, T>,
     _addrtype: PhantomData<A>,
 }
@@ -427,7 +432,7 @@ pub struct IterMut<'a, A, T: 'a> {
 /// Converts ```IpLookupTable``` into an iterator. The prefixes are returned in
 /// "tree"-order.
 #[doc(hidden)]
-pub struct IntoIter<A, T> {
+pub struct IntoIter<A, T: Clone + Copy + Default> {
     inner: tree_bitmap::IntoIter<T>,
     _addrtype: PhantomData<A>,
 }
