@@ -11,11 +11,17 @@ use std::cmp;
 
 mod allocator;
 mod node;
+#[cfg(feature = "rkyv")]
+mod rkyv_impl;
 
 use self::allocator::{Allocator, AllocatorHandle};
 use self::node::{MatchResult, Node};
 
-// #[derive(Debug)]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
+)]
+#[cfg_attr(feature = "bytecheck", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct TreeBitmap<T: Sized + Clone + Copy + Default> {
     trienodes: Allocator<Node>,
     results: Allocator<T>,
@@ -39,11 +45,6 @@ impl<T: Sized + Clone + Copy + Default> TreeBitmap<T> {
             results: Allocator::with_capacity(n),
             len: 0,
         }
-    }
-
-    /// Returns handle to root node.
-    fn root_handle(&self) -> AllocatorHandle {
-        AllocatorHandle::generate(1, 0)
     }
 
     /// Returns the root node.
@@ -96,51 +97,6 @@ impl<T: Sized + Clone + Copy + Default> TreeBitmap<T> {
         }
         node.make_normalnode();
         // note: we do not need to touch the external bits
-    }
-
-    fn longest_match_internal(&self, nibbles: &[u8]) -> Option<(AllocatorHandle, u32, u32)> {
-        let mut cur_hdl = self.root_handle();
-        let mut cur_index = 0;
-        let mut bits_searched = 0;
-        let mut best_match = None; // result handle + index + bites matched
-
-        let mut loop_count = 0;
-        loop {
-            let nibble = if loop_count < nibbles.len() {
-                nibbles[loop_count]
-            } else {
-                0
-            };
-            loop_count += 1;
-
-            let nibble = &nibble;
-            let cur_node = *self.trienodes.get(&cur_hdl, cur_index);
-            let match_mask = node::MATCH_MASKS[*nibble as usize];
-
-            if let MatchResult::Match(result_hdl, result_index, matching_bit_index) =
-                cur_node.match_internal(match_mask)
-            {
-                let bits_matched = bits_searched + node::BIT_MATCH[matching_bit_index as usize];
-                best_match = Some((result_hdl, result_index, bits_matched));
-            }
-
-            if cur_node.is_endnode() {
-                break;
-            }
-            match cur_node.match_external(match_mask) {
-                MatchResult::Chase(child_hdl, child_index) => {
-                    bits_searched += 4;
-                    cur_hdl = child_hdl;
-                    cur_index = child_index;
-                }
-                MatchResult::None => {
-                    break;
-                }
-                _ => unreachable!(),
-            }
-        }
-
-        best_match
     }
 
     /// longest match lookup of ```nibbles```. Returns bits matched as u32, and reference to T.
@@ -333,45 +289,6 @@ impl<T: Sized + Clone + Copy + Default> TreeBitmap<T> {
 
     pub fn len(&self) -> usize {
         self.len
-    }
-
-    fn exact_match_internal(&self, nibbles: &[u8], masklen: u32) -> Option<(AllocatorHandle, u32)> {
-        let mut cur_hdl = self.root_handle();
-        let mut cur_index = 0;
-        let mut bits_left = masklen;
-
-        let mut loop_count = 0;
-        loop {
-            let nibble = if loop_count < nibbles.len() {
-                nibbles[loop_count]
-            } else {
-                0
-            };
-            loop_count += 1;
-
-            let nibble = &nibble;
-            let cur_node = self.trienodes.get(&cur_hdl, cur_index);
-            let bitmap = node::gen_bitmap(*nibble, cmp::min(bits_left, 4)) & node::END_BIT_MASK;
-            let reached_final_node = bits_left < 4 || (cur_node.is_endnode() && bits_left == 4);
-
-            if reached_final_node {
-                return match cur_node.match_internal(bitmap) {
-                    MatchResult::Match(result_hdl, result_index, _) => {
-                        Some((result_hdl, result_index))
-                    }
-                    _ => None,
-                };
-            }
-
-            match cur_node.match_external(bitmap) {
-                MatchResult::Chase(child_hdl, child_index) => {
-                    cur_hdl = child_hdl;
-                    cur_index = child_index;
-                    bits_left -= 4;
-                }
-                _ => return None,
-            }
-        }
     }
 
     pub fn exact_match(&self, nibbles: &[u8], masklen: u32) -> Option<&T> {
@@ -629,6 +546,106 @@ impl<'a, T: 'a + Clone + Copy + Default> Iterator for MatchesMut<'a, T> {
     }
 }
 
+impl<T: Clone + Copy + Default> TrieAccess for TreeBitmap<T> {
+    fn get_node(&self, hdl: &AllocatorHandle, index: u32) -> Node {
+        *self.trienodes.get(&hdl, index)
+    }
+}
+
+trait TrieAccess {
+    fn get_node(&self, hdl: &AllocatorHandle, index: u32) -> Node;
+
+    /// Returns handle to root node.
+    #[inline]
+    fn root_handle(&self) -> AllocatorHandle {
+        AllocatorHandle::generate(1, 0)
+    }
+
+    #[inline]
+    fn longest_match_internal(&self, nibbles: &[u8]) -> Option<(AllocatorHandle, u32, u32)> {
+        let mut cur_hdl = self.root_handle();
+        let mut cur_index = 0;
+        let mut bits_searched = 0;
+        let mut best_match = None; // result handle + index + bites matched
+
+        let mut loop_count = 0;
+        loop {
+            let nibble = if loop_count < nibbles.len() {
+                nibbles[loop_count]
+            } else {
+                0
+            };
+            loop_count += 1;
+
+            let cur_node = self.get_node(&cur_hdl, cur_index);
+            let match_mask = node::MATCH_MASKS[nibble as usize];
+
+            if let MatchResult::Match(result_hdl, result_index, matching_bit_index) =
+                cur_node.match_internal(match_mask)
+            {
+                let bits_matched = bits_searched + node::BIT_MATCH[matching_bit_index as usize];
+                best_match = Some((result_hdl, result_index, bits_matched));
+            }
+
+            if cur_node.is_endnode() {
+                break;
+            }
+            match cur_node.match_external(match_mask) {
+                MatchResult::Chase(child_hdl, child_index) => {
+                    bits_searched += 4;
+                    cur_hdl = child_hdl;
+                    cur_index = child_index;
+                }
+                MatchResult::None => {
+                    break;
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        best_match
+    }
+
+    #[inline]
+    fn exact_match_internal(&self, nibbles: &[u8], masklen: u32) -> Option<(AllocatorHandle, u32)> {
+        let mut cur_hdl = self.root_handle();
+        let mut cur_index = 0;
+        let mut bits_left = masklen;
+
+        let mut loop_count = 0;
+        loop {
+            let nibble = if loop_count < nibbles.len() {
+                nibbles[loop_count]
+            } else {
+                0
+            };
+            loop_count += 1;
+
+            let cur_node = self.get_node(&cur_hdl, cur_index);
+            let bitmap = node::gen_bitmap(nibble, cmp::min(bits_left, 4)) & node::END_BIT_MASK;
+            let reached_final_node = bits_left < 4 || (cur_node.is_endnode() && bits_left == 4);
+
+            if reached_final_node {
+                return match cur_node.match_internal(bitmap) {
+                    MatchResult::Match(result_hdl, result_index, _) => {
+                        Some((result_hdl, result_index))
+                    }
+                    _ => None,
+                };
+            }
+
+            match cur_node.match_external(bitmap) {
+                MatchResult::Chase(child_hdl, child_index) => {
+                    cur_hdl = child_hdl;
+                    cur_index = child_index;
+                    bits_left -= 4;
+                }
+                _ => return None,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -727,6 +744,6 @@ mod tests {
 
     #[derive(Clone, Copy, Default, Debug)]
     struct Thing {
-        id: usize,
+        _id: usize,
     }
 }

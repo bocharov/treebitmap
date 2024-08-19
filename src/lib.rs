@@ -20,6 +20,9 @@
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+#[cfg(feature = "rkyv")]
+extern crate rkyv;
+
 #[cfg(feature = "alloc")]
 use core as std;
 use std::marker::PhantomData;
@@ -34,6 +37,11 @@ use address::Address;
 pub use address::addr::*;
 
 /// A fast, compressed IP lookup table.
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
+)]
+#[cfg_attr(feature = "bytecheck", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct IpLookupTable<A, T: Clone + Copy + Default> {
     inner: TreeBitmap<T>,
     _addrtype: PhantomData<A>,

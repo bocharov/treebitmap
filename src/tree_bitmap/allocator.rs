@@ -12,11 +12,16 @@ use std::mem;
 /// A vector that contains `len / spacing` buckets and each bucket contains `spacing` elements.
 /// Buckets are store contiguously in the vector.
 /// So slots are multiples of `spacing`.
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
+)]
+#[cfg_attr(feature = "bytecheck", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct BucketVec<T> {
-    buf: Vec<T>,
+    pub(crate) buf: Vec<T>,
     freelist: Vec<u32>,
     len: u32,
-    spacing: u32,
+    pub(crate) spacing: u32,
 }
 
 impl<T: fmt::Debug> fmt::Debug for BucketVec<T> {
@@ -178,8 +183,13 @@ pub fn choose_bucket(len: u32) -> u32 {
 /// When a bucket becomes full, the contents are moved to a larger bucket. In
 /// this case the allocator will update the caller's pointer.
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
+)]
+#[cfg_attr(feature = "bytecheck", archive_attr(derive(rkyv::CheckBytes)))]
 pub struct Allocator<T: Sized + Clone + Copy + Default> {
-    buckets: [BucketVec<T>; 9],
+    pub(crate) buckets: [BucketVec<T>; 9],
 }
 
 /// Tracks the size and location of the referenced collection.
