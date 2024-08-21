@@ -188,7 +188,7 @@ pub fn choose_bucket(len: u32) -> u32 {
     derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
 )]
 #[cfg_attr(feature = "bytecheck", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct Allocator<T: Sized + Clone + Copy + Default> {
+pub struct Allocator<T: Sized> {
     pub(crate) buckets: [BucketVec<T>; 9],
 }
 

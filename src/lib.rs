@@ -42,7 +42,7 @@ pub use address::addr::*;
     derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
 )]
 #[cfg_attr(feature = "bytecheck", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct IpLookupTable<A, T: Clone + Copy + Default> {
+pub struct IpLookupTable<A, T> {
     inner: TreeBitmap<T>,
     _addrtype: PhantomData<A>,
 }
@@ -424,7 +424,7 @@ where
 /// Iterator over prefixes and associated values. The prefixes are returned in
 /// "tree"-order.
 #[doc(hidden)]
-pub struct Iter<'a, A, T: 'a + Clone + Copy + Default> {
+pub struct Iter<'a, A, T: 'a> {
     inner: tree_bitmap::Iter<'a, T>,
     _addrtype: PhantomData<A>,
 }
@@ -432,7 +432,7 @@ pub struct Iter<'a, A, T: 'a + Clone + Copy + Default> {
 /// Mutable iterator over prefixes and associated values. The prefixes are
 /// returned in "tree"-order.
 #[doc(hidden)]
-pub struct IterMut<'a, A, T: 'a + Clone + Copy + Default> {
+pub struct IterMut<'a, A, T: 'a> {
     inner: tree_bitmap::IterMut<'a, T>,
     _addrtype: PhantomData<A>,
 }
@@ -440,7 +440,7 @@ pub struct IterMut<'a, A, T: 'a + Clone + Copy + Default> {
 /// Converts ```IpLookupTable``` into an iterator. The prefixes are returned in
 /// "tree"-order.
 #[doc(hidden)]
-pub struct IntoIter<A, T: Clone + Copy + Default> {
+pub struct IntoIter<A, T> {
     inner: tree_bitmap::IntoIter<T>,
     _addrtype: PhantomData<A>,
 }
