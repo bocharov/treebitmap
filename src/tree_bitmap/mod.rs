@@ -22,7 +22,7 @@ use self::node::{MatchResult, Node};
     derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
 )]
 #[cfg_attr(feature = "bytecheck", archive_attr(derive(rkyv::CheckBytes)))]
-pub struct TreeBitmap<T: Sized + Clone + Copy + Default> {
+pub struct TreeBitmap<T: Sized> {
     trienodes: Allocator<Node>,
     results: Allocator<T>,
     len: usize,
@@ -391,13 +391,13 @@ struct PathElem {
     pos: usize,
 }
 
-pub struct Iter<'a, T: 'a + Clone + Copy + Default> {
+pub struct Iter<'a, T: 'a> {
     inner: &'a TreeBitmap<T>,
     path: Vec<PathElem>,
     nibbles: Vec<u8>,
 }
 
-pub struct IterMut<'a, T: 'a + Clone + Copy + Default> {
+pub struct IterMut<'a, T: 'a> {
     inner: &'a mut TreeBitmap<T>,
     path: Vec<PathElem>,
     nibbles: Vec<u8>,
@@ -413,7 +413,7 @@ static PREFIX_OF_BIT: [u8; 32] = [// 0       1       2      3        4       5  
                                   // 24      25      26      27      28      29      30      31
                                   0b1000, 0b1001, 0b1010, 0b1011, 0b1100, 0b1101, 0b1110, 0b1111];
 
-fn next<T: Sized + Clone + Copy + Default>(
+fn next<T: Sized>(
     trie: &TreeBitmap<T>,
     path: &mut Vec<PathElem>,
     nibbles: &mut Vec<u8>,
@@ -488,7 +488,7 @@ impl<'a, T: 'a + Clone + Copy + Default> Iterator for IterMut<'a, T> {
     }
 }
 
-pub struct IntoIter<T: Clone + Copy + Default> {
+pub struct IntoIter<T> {
     inner: TreeBitmap<T>,
     path: Vec<PathElem>,
     nibbles: Vec<u8>,
@@ -526,7 +526,7 @@ impl<T: Clone + Copy + Default> IntoIterator for TreeBitmap<T> {
     }
 }
 
-pub struct MatchesMut<'a, T: 'a + Clone + Copy + Default> {
+pub struct MatchesMut<'a, T: 'a> {
     inner: &'a mut TreeBitmap<T>,
     path: std::vec::IntoIter<(u32, AllocatorHandle, u32)>,
 }
@@ -546,7 +546,7 @@ impl<'a, T: 'a + Clone + Copy + Default> Iterator for MatchesMut<'a, T> {
     }
 }
 
-impl<T: Clone + Copy + Default> TrieAccess for TreeBitmap<T> {
+impl<T> TrieAccess for TreeBitmap<T> {
     fn get_node(&self, hdl: &AllocatorHandle, index: u32) -> Node {
         *self.trienodes.get(&hdl, index)
     }
