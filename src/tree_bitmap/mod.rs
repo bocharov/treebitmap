@@ -22,6 +22,7 @@ use self::node::{MatchResult, Node};
     derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)
 )]
 #[cfg_attr(feature = "bytecheck", archive_attr(derive(rkyv::CheckBytes)))]
+#[derive(Debug)]
 pub struct TreeBitmap<T: Sized> {
     trienodes: Allocator<Node>,
     results: Allocator<T>,
